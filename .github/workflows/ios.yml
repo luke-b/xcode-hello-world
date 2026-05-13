@@ -29,10 +29,11 @@ jobs:
       - name: Select iPad simulator
         id: sim
         run: |
+          set -euo pipefail
           # Write JSON to a unique temp file so Python can read it without stdin conflict
           SIMCTL_JSON=$(mktemp /tmp/simctl.XXXXXX.json)
           xcrun simctl list devices available --json > "$SIMCTL_JSON"
-          IPAD_SIM=$(python3 - "$SIMCTL_JSON" <<'EOF'
+          SELECTED_SIM=$(python3 - "$SIMCTL_JSON" <<'EOF'
           import sys, json
           try:
               with open(sys.argv[1]) as f:
@@ -40,26 +41,55 @@ jobs:
           except Exception as e:
               print(f"Failed to parse simctl output: {e}", file=sys.stderr)
               sys.exit(1)
-          # Iterate runtimes newest-first so we pick the latest iOS.
-          # Runtime keys use the format "com.apple.CoreSimulator.SimRuntime.iOS-NN-N",
-          # so checking for "iOS" is sufficient to identify iOS/iPadOS runtimes.
+
+          preferred_names = [
+              "iPad Pro 13-inch (M5)",
+              "iPad Air 11-inch (M3)",
+              "iPad (10th generation)",
+          ]
+
+          def available_ipads(devices):
+              return sorted(
+                  [d for d in devices if "iPad" in d.get("name", "") and d.get("isAvailable", False)],
+                  key=lambda x: x.get("name", ""),
+              )
+
+          # Iterate runtimes newest-first so we pick the latest iOS/iPadOS.
           for runtime_key in sorted(data["devices"].keys(), reverse=True):
               if "iOS" not in runtime_key:
                   continue
-              for dev in data["devices"][runtime_key]:
-                  if "iPad" in dev["name"] and dev.get("isAvailable", False):
-                      print(dev["name"])
-                      sys.exit(0)
-          # Fallback — use a known-available device name
-          print("iPad Air 11-inch (M3)")
+              iPads = available_ipads(data["devices"][runtime_key])
+              if not iPads:
+                  continue
+
+              # Explicit deterministic fallback order by preferred model names.
+              for preferred in preferred_names:
+                  for dev in iPads:
+                      if dev["name"] == preferred:
+                          print(f'{dev["name"]}\t{dev["udid"]}\t{runtime_key}')
+                          sys.exit(0)
+
+              # Final deterministic fallback for the runtime: alphabetically first iPad.
+              dev = iPads[0]
+              print(f'{dev["name"]}\t{dev["udid"]}\t{runtime_key}')
+              sys.exit(0)
+
+          # No iPad simulator found.
+          print("No available iPad simulator found across iOS runtimes.", file=sys.stderr)
+          sys.exit(1)
           EOF
           )
-          if [ -z "$IPAD_SIM" ]; then
-            echo "::error::Could not select an iPad simulator"
+          IFS=$'\t' read -r IPAD_SIM IPAD_SIM_UDID IPAD_RUNTIME <<< "$SELECTED_SIM"
+          if [ -z "${IPAD_SIM:-}" ] || [ -z "${IPAD_SIM_UDID:-}" ]; then
+            echo "::error::Could not select an available iPad simulator (name/UDID missing)"
             exit 1
           fi
           echo "IPAD_SIM=$IPAD_SIM" >> "$GITHUB_ENV"
-          echo "Selected simulator: $IPAD_SIM"
+          echo "IPAD_SIM_UDID=$IPAD_SIM_UDID" >> "$GITHUB_ENV"
+          echo "IPAD_RUNTIME=$IPAD_RUNTIME" >> "$GITHUB_ENV"
+          echo "Selected simulator name: $IPAD_SIM"
+          echo "Selected simulator UDID: $IPAD_SIM_UDID"
+          echo "Selected simulator runtime: $IPAD_RUNTIME"
 
       # ── 4. Build ────────────────────────────────────────────────────────
       - name: Build app
@@ -79,20 +109,51 @@ jobs:
           xcodebuild test \
             -project HelloWorld/HelloWorld.xcodeproj \
             -scheme HelloWorld \
-            -destination "platform=iOS Simulator,name=$IPAD_SIM" \
+            -destination "platform=iOS Simulator,id=$IPAD_SIM_UDID" \
             -only-testing HelloWorldTests \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
       # ── 6. UI tests ─────────────────────────────────────────────────────
+      - name: Prepare simulator for UI tests
+        run: |
+          set -euo pipefail
+          echo "Preparing simulator for UI tests: $IPAD_SIM ($IPAD_SIM_UDID)"
+          SIM_STATE=$(xcrun simctl list devices --json | python3 - "$IPAD_SIM_UDID" <<'EOF'
+          import json, sys
+          udid = sys.argv[1]
+          data = json.load(sys.stdin)
+          for runtime_devices in data.get("devices", {}).values():
+              for dev in runtime_devices:
+                  if dev.get("udid") == udid:
+                      print(dev.get("state", "Unknown"))
+                      sys.exit(0)
+          print("Unknown")
+          EOF
+          )
+          if [ "$SIM_STATE" != "Booted" ]; then
+            xcrun simctl boot "$IPAD_SIM_UDID"
+          fi
+          xcrun simctl bootstatus "$IPAD_SIM_UDID" -b
+          xcrun simctl list devices available | grep -F "$IPAD_SIM_UDID" || true
+
       - name: Run UI tests
         run: |
           xcodebuild test \
             -project HelloWorld/HelloWorld.xcodeproj \
             -scheme HelloWorld \
-            -destination "platform=iOS Simulator,name=$IPAD_SIM" \
+            -destination "platform=iOS Simulator,id=$IPAD_SIM_UDID" \
             -only-testing HelloWorldUITests \
+            -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload UI test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-tests-xcresult
+          path: ${{ runner.temp }}/ui-tests.xcresult
+          if-no-files-found: warn
