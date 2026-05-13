@@ -120,7 +120,21 @@ jobs:
         run: |
           set -euo pipefail
           echo "Preparing simulator for UI tests: $IPAD_SIM ($IPAD_SIM_UDID)"
-          xcrun simctl boot "$IPAD_SIM_UDID" || true
+          SIM_STATE=$(xcrun simctl list devices --json | python3 - "$IPAD_SIM_UDID" <<'EOF'
+          import json, sys
+          udid = sys.argv[1]
+          data = json.load(sys.stdin)
+          for runtime_devices in data.get("devices", {}).values():
+              for dev in runtime_devices:
+                  if dev.get("udid") == udid:
+                      print(dev.get("state", "Unknown"))
+                      sys.exit(0)
+          print("Unknown")
+          EOF
+          )
+          if [ "$SIM_STATE" != "Booted" ]; then
+            xcrun simctl boot "$IPAD_SIM_UDID"
+          fi
           xcrun simctl bootstatus "$IPAD_SIM_UDID" -b
           xcrun simctl list devices available | grep -F "$IPAD_SIM_UDID" || true
 
