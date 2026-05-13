@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           # Write JSON to a unique temp file so Python can read it without stdin conflict
-          SIMCTL_JSON=$(mktemp /tmp/simctl.XXXXXX.json)
+          SIMCTL_JSON=$(mktemp -t simctl.XXXXXX.json)
           xcrun simctl list devices available --json > "$SIMCTL_JSON"
           SELECTED_SIM=$(python3 - "$SIMCTL_JSON" <<'EOF'
           import sys, json
