@@ -15,7 +15,13 @@ final class HelloWorldUITests: XCTestCase {
     }
 
     func testAppLaunchesSuccessfully() throws {
-        XCTAssertEqual(app.state, .runningForeground, "App should be running in the foreground")
+        let predicate = NSPredicate(
+            format: "state == %d",
+            XCUIApplication.State.runningForeground.rawValue
+        )
+        let foregroundExpectation = XCTNSPredicateExpectation(predicate: predicate, object: app)
+        let waitResult = XCTWaiter().wait(for: [foregroundExpectation], timeout: 15)
+        XCTAssertEqual(waitResult, .completed, "App should be running in the foreground")
     }
 
     func testHelloWorldTextIsVisible() throws {
