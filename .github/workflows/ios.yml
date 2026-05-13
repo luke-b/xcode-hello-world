@@ -1,0 +1,84 @@
+name: iOS CI — Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build and Test (iPad Simulator)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      # ── 1. Source ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Environment info ────────────────────────────────────────────
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: List available iPad simulators
+        run: xcrun simctl list devices available | grep -i ipad || echo "No iPad simulators listed"
+
+      # ── 3. Select simulator ────────────────────────────────────────────
+      - name: Select iPad simulator
+        id: sim
+        run: |
+          IPAD_SIM=$(xcrun simctl list devices available --json | python3 - <<'EOF'
+          import sys, json
+          data = json.load(sys.stdin)
+          # Iterate runtimes newest-first so we pick the latest iOS
+          for runtime_key in sorted(data["devices"].keys(), reverse=True):
+              if "iOS" not in runtime_key and "com.apple.CoreSimulator.SimRuntime.iOS" not in runtime_key:
+                  continue
+              for dev in data["devices"][runtime_key]:
+                  if "iPad" in dev["name"] and dev.get("isAvailable", False):
+                      print(dev["name"])
+                      sys.exit(0)
+          # Fallback — any simulator works
+          print("iPad Air (5th generation)")
+          EOF
+          )
+          echo "IPAD_SIM=$IPAD_SIM" >> "$GITHUB_ENV"
+          echo "Selected simulator: $IPAD_SIM"
+
+      # ── 4. Build ────────────────────────────────────────────────────────
+      - name: Build app
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project HelloWorld/HelloWorld.xcodeproj \
+            -scheme HelloWorld \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      # ── 5. Unit tests ───────────────────────────────────────────────────
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project HelloWorld/HelloWorld.xcodeproj \
+            -scheme HelloWorld \
+            -destination "platform=iOS Simulator,name=$IPAD_SIM" \
+            -only-testing HelloWorldTests \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      # ── 6. UI tests ─────────────────────────────────────────────────────
+      - name: Run UI tests
+        run: |
+          xcodebuild test \
+            -project HelloWorld/HelloWorld.xcodeproj \
+            -scheme HelloWorld \
+            -destination "platform=iOS Simulator,name=$IPAD_SIM" \
+            -only-testing HelloWorldUITests \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
