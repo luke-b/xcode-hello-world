@@ -219,3 +219,76 @@ All `xcodebuild` invocations pass `CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=N
 ---
 
 *Built with ❤️ using Swift, SwiftUI, Xcode, and GitHub Actions.*
+
+---
+
+## 🚀 TestFlight Release Pipeline (GitHub Actions)
+
+This repository now includes a dedicated release workflow: `.github/workflows/release-testflight.yml`.
+
+### What it does
+
+1. Runs on manual dispatch or when pushing a tag matching `v*`.
+2. Restores signing material from GitHub Secrets.
+3. Archives the app for real iOS devices (`generic/platform=iOS`).
+4. Exports an App Store IPA.
+5. Uploads the build to App Store Connect (TestFlight) using App Store Connect API key credentials.
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|---|---|
+| `BUILD_CERTIFICATE_BASE64` | Base64 `.p12` distribution certificate |
+| `P12_PASSWORD` | Password for the `.p12` certificate |
+| `MOBILEPROVISION_BASE64` | Base64 App Store provisioning profile |
+| `KEYCHAIN_PASSWORD` | Temporary keychain password used in CI |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+| `APP_STORE_CONNECT_API_KEY_ID` | API Key ID from App Store Connect |
+| `APP_STORE_CONNECT_ISSUER_ID` | API Issuer ID from App Store Connect |
+| `APP_STORE_CONNECT_API_KEY_BASE64` | Base64 content of `AuthKey_<KEY_ID>.p8` |
+
+### Run it
+
+- Manual: **GitHub → Actions → iOS Release — Archive & Upload to TestFlight → Run workflow**
+- Tag-based: push a git tag (for example `v1.0.0`)
+
+---
+
+## ✅ Manual Checklist (Apple + iPad)
+
+Use this checklist to finish the end-to-end release to your target device: **iPad (5th generation), iPadOS 16.7.10 (20H350)**.
+
+### Apple / App Store Connect setup (one-time)
+
+- [ ] In Apple Developer, ensure App ID (Bundle ID) exactly matches the Xcode project.
+- [ ] In App Store Connect, create the app record for the same Bundle ID.
+- [ ] In App Store Connect, create an API key with permissions for TestFlight upload.
+- [ ] Generate or export an Apple Distribution certificate (`.p12`) and password.
+- [ ] Create an **App Store** provisioning profile for the app.
+- [ ] Add all required values to GitHub Actions Secrets.
+
+### GitHub setup (one-time)
+
+- [ ] Confirm secrets are stored at **Repository Settings → Secrets and variables → Actions**.
+- [ ] Trigger the release workflow manually once to validate signing and upload.
+
+### TestFlight setup (one-time)
+
+- [ ] Add at least one Internal Tester in App Store Connect.
+- [ ] (Optional) Configure External Testing group (requires Beta App Review on first external build).
+
+### Device-side steps on the iPad (every tester)
+
+- [ ] On iPad, install **TestFlight** from the App Store.
+- [ ] Sign in with the Apple ID used for testing invitation.
+- [ ] Accept the TestFlight invite email/link.
+- [ ] Install the latest build from TestFlight.
+- [ ] Verify launch and core UI flow on **iPadOS 16.7.10 (20H350)**.
+- [ ] Report crashes/bugs with screenshot + timestamp + build number.
+
+### Release quality gate (recommended every build)
+
+- [ ] CI simulator workflow is green (`iOS CI — Build & Test`).
+- [ ] TestFlight upload completed successfully in GitHub Actions logs.
+- [ ] Build appears in App Store Connect → TestFlight.
+- [ ] Smoke test passed on physical iPad (5th gen).
