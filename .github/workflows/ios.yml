@@ -10,6 +10,8 @@ jobs:
   build-and-test:
     name: Build and Test (iPad Simulator)
     runs-on: macos-latest
+    permissions:
+      contents: read
 
     steps:
       # ── 1. Source ──────────────────────────────────────────────────────
