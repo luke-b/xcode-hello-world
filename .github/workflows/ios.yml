@@ -29,21 +29,35 @@ jobs:
       - name: Select iPad simulator
         id: sim
         run: |
-          IPAD_SIM=$(xcrun simctl list devices available --json | python3 - <<'EOF'
+          # Write JSON to a unique temp file so Python can read it without stdin conflict
+          SIMCTL_JSON=$(mktemp /tmp/simctl.XXXXXX.json)
+          xcrun simctl list devices available --json > "$SIMCTL_JSON"
+          IPAD_SIM=$(python3 - "$SIMCTL_JSON" <<'EOF'
           import sys, json
-          data = json.load(sys.stdin)
-          # Iterate runtimes newest-first so we pick the latest iOS
+          try:
+              with open(sys.argv[1]) as f:
+                  data = json.load(f)
+          except Exception as e:
+              print(f"Failed to parse simctl output: {e}", file=sys.stderr)
+              sys.exit(1)
+          # Iterate runtimes newest-first so we pick the latest iOS.
+          # Runtime keys use the format "com.apple.CoreSimulator.SimRuntime.iOS-NN-N",
+          # so checking for "iOS" is sufficient to identify iOS/iPadOS runtimes.
           for runtime_key in sorted(data["devices"].keys(), reverse=True):
-              if "iOS" not in runtime_key and "com.apple.CoreSimulator.SimRuntime.iOS" not in runtime_key:
+              if "iOS" not in runtime_key:
                   continue
               for dev in data["devices"][runtime_key]:
                   if "iPad" in dev["name"] and dev.get("isAvailable", False):
                       print(dev["name"])
                       sys.exit(0)
-          # Fallback — any simulator works
-          print("iPad Air (5th generation)")
+          # Fallback — use a known-available device name
+          print("iPad Air 11-inch (M3)")
           EOF
           )
+          if [ -z "$IPAD_SIM" ]; then
+            echo "::error::Could not select an iPad simulator"
+            exit 1
+          fi
           echo "IPAD_SIM=$IPAD_SIM" >> "$GITHUB_ENV"
           echo "Selected simulator: $IPAD_SIM"
 
