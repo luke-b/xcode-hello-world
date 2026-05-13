@@ -75,7 +75,8 @@ jobs:
               sys.exit(0)
 
           # No iPad simulator found.
-          print("\t\t")
+          print("No available iPad simulator found across iOS runtimes.", file=sys.stderr)
+          sys.exit(1)
           EOF
           )
           IFS=$'\t' read -r IPAD_SIM IPAD_SIM_UDID IPAD_RUNTIME <<< "$SELECTED_SIM"
@@ -122,7 +123,6 @@ jobs:
           xcrun simctl boot "$IPAD_SIM_UDID" || true
           xcrun simctl bootstatus "$IPAD_SIM_UDID" -b
           xcrun simctl list devices available | grep -F "$IPAD_SIM_UDID" || true
-          sleep 10
 
       - name: Run UI tests
         run: |
