@@ -31,7 +31,8 @@ jobs:
         run: |
           set -euo pipefail
           # Write JSON to a unique temp file so Python can read it without stdin conflict
-          SIMCTL_JSON=$(mktemp -t simctl.XXXXXX.json)
+          SIMCTL_JSON=$(mktemp /tmp/simctl.XXXXXX.json)
+          trap 'rm -f "$SIMCTL_JSON"' EXIT
           xcrun simctl list devices available --json > "$SIMCTL_JSON"
           SELECTED_SIM=$(python3 - "$SIMCTL_JSON" <<'EOF'
           import sys, json
@@ -120,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Preparing simulator for UI tests: $IPAD_SIM ($IPAD_SIM_UDID)"
-          SIMCTL_JSON=$(mktemp -t simctl.XXXXXX.json)
+          SIMCTL_JSON=$(mktemp /tmp/simctl.XXXXXX.json)
           trap 'rm -f "$SIMCTL_JSON"' EXIT
           xcrun simctl list devices --json > "$SIMCTL_JSON"
           SIM_STATE=$(python3 - "$SIMCTL_JSON" "$IPAD_SIM_UDID" <<'EOF'
