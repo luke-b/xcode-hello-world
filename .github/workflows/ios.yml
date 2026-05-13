@@ -120,10 +120,14 @@ jobs:
         run: |
           set -euo pipefail
           echo "Preparing simulator for UI tests: $IPAD_SIM ($IPAD_SIM_UDID)"
-          SIM_STATE=$(xcrun simctl list devices --json | python3 - "$IPAD_SIM_UDID" <<'EOF'
+          SIMCTL_JSON=$(mktemp /tmp/simctl.XXXXXX.json)
+          xcrun simctl list devices --json > "$SIMCTL_JSON"
+          SIM_STATE=$(python3 - "$SIMCTL_JSON" "$IPAD_SIM_UDID" <<'EOF'
           import json, sys
-          udid = sys.argv[1]
-          data = json.load(sys.stdin)
+          json_path = sys.argv[1]
+          udid = sys.argv[2]
+          with open(json_path) as f:
+              data = json.load(f)
           for runtime_devices in data.get("devices", {}).values():
               for dev in runtime_devices:
                   if dev.get("udid") == udid:
