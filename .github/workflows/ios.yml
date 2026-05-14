@@ -16,7 +16,7 @@ jobs:
     steps:
       # ── 1. Source ──────────────────────────────────────────────────────
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # ── 2. Environment info ────────────────────────────────────────────
       - name: Show Xcode version
@@ -104,7 +104,28 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      # ── 5. Unit tests ───────────────────────────────────────────────────
+      # ── 5. Collect & upload build artifact ─────────────────────────────
+      - name: Collect build artifact
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "HelloWorld.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::HelloWorld.app not found in DerivedData"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/artifacts"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" \
+            "$RUNNER_TEMP/artifacts/HelloWorld-${{ github.run_number }}.zip"
+          echo "Archived: $APP_PATH → $RUNNER_TEMP/artifacts/HelloWorld-${{ github.run_number }}.zip"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HelloWorld-build-${{ github.run_number }}
+          path: ${{ runner.temp }}/artifacts/
+          if-no-files-found: error
+
+      # ── 6. Unit tests ───────────────────────────────────────────────────
       - name: Run unit tests
         run: |
           xcodebuild test \
@@ -116,7 +137,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      # ── 6. UI tests ─────────────────────────────────────────────────────
+      # ── 7. UI tests ─────────────────────────────────────────────────────
       - name: Prepare simulator for UI tests
         run: |
           set -euo pipefail
